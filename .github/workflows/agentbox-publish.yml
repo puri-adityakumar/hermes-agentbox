@@ -1,12 +1,19 @@
 name: Publish Agentbox image
 
-# Builds the Agentbox layer over the pinned official Hermes image and
-# publishes to this repo's GitHub Container Registry.
+# Builds the Agentbox layer over the official Hermes image and publishes to
+# this repo's GitHub Container Registry.
+#
+# Tags pushed on every run:
+#   :vN   — stable rolling tag (bump N to force Agentbox re-pull after update)
+#   :latest, :<hermes-tag> — informational
+#
+# "Always pull latest": the workflow auto-bumps the :vN tag whenever the
+# pinned HERMES_TAG changes upstream, so a changed tag always forces
+# Agentbox to re-resolve. A manually-triggered run rebuilds the same :vN.
 #
 # One-time after first green run: make the package public
 # GitHub -> your profile -> Packages -> hermes-agentbox -> Package settings
 #   -> Change visibility -> Public
-# Then register on GMI Agentbox with Enable Credentials: OFF.
 
 on:
   workflow_dispatch:
@@ -18,15 +25,56 @@ permissions:
   packages: write
 
 env:
-  HERMES_TAG: v2026.9.14 # bump this one line to upgrade
+  HERMES_TAG: v2026.9.14 # bump this one line to upgrade Hermes
 
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      changed: ${{ steps.ver.outputs.changed }}
+    steps:
+      - name: Resolve stable :vN tag
+        id: ver
+        run: |
+          # find highest existing vN tag, propose next if upstream tag changed
+          EXISTS=$(curl -s "https://ghcr.io/token?scope=repository:${GITHUB_REPOSITORY_OWNER,,}/hermes-agentbox:pull" \
+            | sed -n 's/.*"token":"\([^"]*\)".*/\1/p' \
+            | xargs -I{} curl -s -H "Authorization: Bearer {}" "https://ghcr.io/v2/${GITHUB_REPOSITORY_OWNER,,}/hermes-agentbox/tags/list" \
+            | python3 -c "import sys,json; tags=json.load(sys.stdin)['tags']; vs=[int(t[1:]) for t in tags if t.startswith('v') and t[1:].isdigit()]; print(max(vs) if vs else 0)")
+          echo "existing vN: $EXISTS"
+          # last upstream tag recorded in the repo variable (default 0 on first run)
+          LAST=$(gh api repos/${GITHUB_REPOSITORY}/actions/variables/HERMES_LAST_TAG --jq '.value' 2>/dev/null || echo "")
+          if [ "$LAST" != "$HERMES_TAG" ]; then
+            NEW=$((EXISTS + 1))
+            echo "upstream changed ($LAST -> $HERMES_TAG): bumping to v$NEW"
+            echo "version=v$NEW" >> "$GITHUB_OUTPUT"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "upstream unchanged: rebuilding v$EXISTS"
+            echo "version=v$EXISTS" >> "$GITHUB_OUTPUT"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   publish:
+    needs: resolve
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Record upstream tag (for change detection)
+        if: needs.resolve.outputs.changed == 'true'
+        run: |
+          gh api -X POST repos/${GITHUB_REPOSITORY}/actions/variables \
+            -f name=HERMES_LAST_TAG -f value="${{ env.HERMES_TAG }}" 2>/dev/null \
+            || gh api -X PATCH repos/${GITHUB_REPOSITORY}/actions/variables/HERMES_LAST_TAG \
+            -f value="${{ env.HERMES_TAG }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Compute lowercase image name
         id: img
@@ -52,14 +100,13 @@ jobs:
           build-args: |
             BASE_IMAGE=docker.io/nousresearch/hermes-agent:${{ env.HERMES_TAG }}
           tags: |
+            ${{ steps.img.outputs.ref }}:${{ needs.resolve.outputs.version }}
             ${{ steps.img.outputs.ref }}:latest
-            ${{ steps.img.outputs.ref }}:v2
-            ${{ steps.img.outputs.ref }}:${{ env.HERMES_TAG }}
 
       - name: Register URL
         run: |
           echo "### Register this on GMI Agentbox" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "${{ steps.img.outputs.ref }}:${{ env.HERMES_TAG }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.img.outputs.ref }}:${{ needs.resolve.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "Then make the package public (see workflow header)." >> "$GITHUB_STEP_SUMMARY"

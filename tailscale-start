@@ -1,0 +1,45 @@
+#!/command/with-contenv sh
+# Optional Tailscale sidecar. No-ops unless TAILSCALE_AUTHKEY is injected
+# (set it as a SECRET in the Agentbox env form; generate at
+# https://login.tailscale.com/admin/settings/keys — use an EPHEMERAL+
+# REUSABLE key so relaunches re-join without manual steps).
+#
+# Env vars:
+#   TAILSCALE_AUTHKEY   (required to activate) auth key
+#   TAILSCALE_HOSTNAME  (optional) device name, default: hermes-box
+#   TAILSCALE_LOGIN_SERVER (optional) set for Headscale
+# After boot the pod is reachable at its 100.x.y.z tailnet IP:
+#   http://<100.x.y.z>:9119  -> dashboard
+set -e
+
+if [ -z "${TAILSCALE_AUTHKEY:-}" ]; then
+    echo "[tailscale] TAILSCALE_AUTHKEY not set — skipping (dashboard via public ingress or tunnel)" >&2
+    exit 0
+fi
+
+LOG=/tmp/tailscaled.log
+
+# userspace networking: no /dev/net/tun needed in the tenant container
+nohup tailscaled --tun=userspace-networking --state=/opt/data/.tailscaled.state \
+    > "$LOG" 2>&1 < /dev/null &
+TPID=$!
+
+sleep 3
+if ! kill -0 "$TPID" 2>/dev/null; then
+    echo "[tailscale] FATAL: tailscaled died; tail of log:" >&2
+    tail -20 "$LOG" >&2 || true
+    exit 0
+fi
+
+EXTRA_ARGS=""
+[ -n "${TAILSCALE_LOGIN_SERVER:-}" ] && EXTRA_ARGS="--login-server=${TAILSCALE_LOGIN_SERVER}"
+
+if tailscale up --authkey="${TAILSCALE_AUTHKEY}" \
+       --hostname="${TAILSCALE_HOSTNAME:-hermes-box}" \
+       $EXTRA_ARGS > /tmp/tailscale-up.log 2>&1; then
+    TSIP=$(tailscale ip -4 2>/dev/null || echo "?")
+    echo "[tailscale] joined tailnet: http://${TSIP}:9119 -> dashboard" >&2
+else
+    echo "[tailscale] WARN: tailscale up failed (key expired?); tail:" >&2
+    tail -10 /tmp/tailscale-up.log >&2 || true
+fi

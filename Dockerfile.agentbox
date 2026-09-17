@@ -19,12 +19,17 @@ ENV API_SERVER_ENABLED=true \
 # Map GMI MaaS injection -> Hermes GMI provider, before the main service boots.
 COPY --chmod=0755 gmi-maas-init /etc/cont-init.d/00-gmi-maas
 
-# Single-port front: dashboard + API through 8080.
+# Single-port front + messaging/Tailscale tooling.
+# Installed: caddy (front proxy), tailscale (private dashboard access),
+# jq (authkey processing). Messaging clients ship in the base image; the
+# gateway enables Telegram/Discord automatically when their token env vars
+# are present — no extra packages needed.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends caddy \
+    && apt-get install -y --no-install-recommends caddy tailscale jq \
     && rm -rf /var/lib/apt/lists/*
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY --chmod=0755 caddy-start /etc/cont-init.d/01-caddy-start
+COPY --chmod=0755 tailscale-start /etc/cont-init.d/02-tailscale-start
 
 EXPOSE 8080
 # main-wrapper.sh routes "gateway run" -> `hermes gateway run`
