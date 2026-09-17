@@ -16,11 +16,10 @@ if [ -z "${GMI_MAAS_API_KEY}" ]; then
 fi
 
 # Hermes provider env vars (win at runtime; .env does not exist yet on first boot)
-printf '%s\n' \
-    "GMI_API_KEY=${GMI_MAAS_API_KEY}" \
-    "GMI_BASE_URL=${GMI_MAAS_BASE_URL%/}/v1" \
-    > /run/s6/container_environment/GMI_API_KEY
-printf '%s\n' "${GMI_MAAS_BASE_URL%/}/v1" > /run/s6/container_environment/GMI_BASE_URL
+# NOTE: one file per var — file CONTENT is the value. Never combine two vars
+# into one file (that produced 'Bearer GMI_API_KEY=...' as the literal key).
+printf '%s' "${GMI_MAAS_API_KEY}" > /run/s6/container_environment/GMI_API_KEY
+printf '%s' "${GMI_MAAS_BASE_URL%/}/v1" > /run/s6/container_environment/GMI_BASE_URL
 
 # Model selection: HERMES_MODEL only feeds cron; the runtime reads model.default.
 # Render a minimal config.yaml on first boot only (user edits survive afterwards).
