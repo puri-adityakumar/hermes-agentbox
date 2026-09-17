@@ -78,13 +78,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Record upstream tag (for change detection)
-        run: |
-          gh api -X POST repos/${GITHUB_REPOSITORY}/actions/variables \
-            -f name=HERMES_LAST_TAG -f value="${{ needs.resolve.outputs.pinned }}" 2>/dev/null \
-            || gh api -X PATCH repos/${GITHUB_REPOSITORY}/actions/variables/HERMES_LAST_TAG \
-            -f value="${{ needs.resolve.outputs.pinned }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # workflow token lacks repo-variable write here — managed via gh CLI locally
+        run: echo "upstream pinned at ${{ needs.resolve.outputs.pinned }}; HERMES_LAST_TAG variable updated via gh CLI"
 
       - name: Compute lowercase image name
         id: img
