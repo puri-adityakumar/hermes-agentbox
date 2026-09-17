@@ -38,10 +38,13 @@ jobs:
     steps:
       - name: Resolve latest upstream tag
         id: pin
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # concrete latest release tag from upstream (never the floating 'latest')
-          UP=$(curl -s https://api.github.com/repos/NousResearch/hermes-agent/releases/latest \
-            | python3 -c "import sys,json; print(json.load(sys.stdin).get('tag_name',''))")
+          # authenticated call — anonymous API rate-limits broke this once already
+          UP=$(gh api repos/NousResearch/hermes-agent/releases/latest --jq '.tag_name')
+          if [ -z "$UP" ] || [ "$UP" = "null" ]; then echo "FATAL: could not resolve upstream tag"; exit 1; fi
           echo "upstream latest release: $UP"
           echo "pinned=$UP" >> "$GITHUB_OUTPUT"
       - name: Resolve stable :vN tag
