@@ -1,0 +1,35 @@
+:8080 {
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+
+    # OpenAI-compatible API endpoints -> Hermes API server
+    handle /v1/* {
+        reverse_proxy 127.0.0.1:18080 {
+            flush_interval -1
+            transport http {
+                response_header_timeout 5m
+                read_timeout 30m
+            }
+        }
+    }
+
+    # Health check passthrough for platform readiness probes
+    handle /health {
+        rewrite * /v1/health
+        reverse_proxy 127.0.0.1:18080
+    }
+
+    # Everything else -> Hermes web dashboard
+    handle {
+        reverse_proxy 127.0.0.1:9119 {
+            flush_interval -1
+            transport http {
+                response_header_timeout 5m
+                read_timeout 30m
+            }
+        }
+    }
+}

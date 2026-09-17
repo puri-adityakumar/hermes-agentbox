@@ -1,0 +1,21 @@
+#!/command/with-contenv sh
+# Starts Caddy in front of the two Hermes services (API 18080, dashboard 9119).
+# Caddy listens on the public port 8080 and routes:
+#   /v1/* + /health -> API server, everything else -> dashboard.
+set -e
+
+LOG=/tmp/caddy.log
+
+nohup /usr/bin/caddy run \
+  --config /etc/caddy/Caddyfile \
+  --adapter caddyfile \
+  > "$LOG" 2>&1 < /dev/null &
+CADDY_PID=$!
+
+sleep 2
+if ! kill -0 "$CADDY_PID" 2>/dev/null; then
+  echo "[caddy] FATAL: died within 2s of start; tail of log:" >&2
+  tail -30 "$LOG" >&2 || true
+else
+  echo "[caddy] started (pid=$CADDY_PID); :8080 -> API (/v1,/health) + dashboard (/*)" >&2
+fi

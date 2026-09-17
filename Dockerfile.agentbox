@@ -1,4 +1,7 @@
 # Thin AgentBox layer over the official Hermes image.
+# Single public port: Caddy on 8080 serves the dashboard and proxies
+# /v1/* + /health to the Hermes API server (localhost:18080).
+#
 # Build (AgentBox compute is x86_64):
 #   docker buildx build --platform linux/amd64 \
 #     --build-arg BASE_IMAGE=docker.io/nousresearch/hermes-agent:v2026.9.14 \
@@ -6,16 +9,22 @@
 ARG BASE_IMAGE=docker.io/nousresearch/hermes-agent:v2026.9.14
 FROM ${BASE_IMAGE}
 
-# AgentBox health-checks and routes on the container's public port (default 8080).
-# The gateway's OpenAI-compatible API server + /health endpoint listen here.
+# API server: bound to loopback only — Caddy fronts it on the public port.
 ENV API_SERVER_ENABLED=true \
-    API_SERVER_HOST=0.0.0.0 \
-    API_SERVER_PORT=8080 \
+    API_SERVER_HOST=127.0.0.1 \
+    API_SERVER_PORT=18080 \
     HERMES_DASHBOARD=1 \
     HERMES_DASHBOARD_PORT=9119
 
 # Map GMI MaaS injection -> Hermes GMI provider, before the main service boots.
 COPY --chmod=0755 gmi-maas-init /etc/cont-init.d/00-gmi-maas
+
+# Single-port front: dashboard + API through 8080.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends caddy \
+    && rm -rf /var/lib/apt/lists/*
+COPY Caddyfile /etc/caddy/Caddyfile
+COPY --chmod=0755 caddy-start /etc/cont-init.d/01-caddy-start
 
 EXPOSE 8080
 # main-wrapper.sh routes "gateway run" -> `hermes gateway run`
