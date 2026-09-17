@@ -26,7 +26,7 @@ permissions:
   actions: write # record HERMES_LAST_TAG repo variable for change detection
 
 env:
-  HERMES_TAG: v2026.9.14 # bump this one line to upgrade Hermes
+  HERMES_TAG: latest # auto-follows upstream; the resolve job pins the concrete tag
 
 jobs:
   resolve:
@@ -34,21 +34,31 @@ jobs:
     outputs:
       version: ${{ steps.ver.outputs.version }}
       changed: ${{ steps.ver.outputs.changed }}
+      pinned: ${{ steps.ver.outputs.pinned }}
     steps:
+      - name: Resolve latest upstream tag
+        id: pin
+        run: |
+          # concrete latest release tag from upstream (never the floating 'latest')
+          UP=$(curl -s https://api.github.com/repos/NousResearch/hermes-agent/releases/latest \
+            | python3 -c "import sys,json; print(json.load(sys.stdin).get('tag_name',''))")
+          echo "upstream latest release: $UP"
+          echo "pinned=$UP" >> "$GITHUB_OUTPUT"
       - name: Resolve stable :vN tag
         id: ver
         run: |
-          # find highest existing vN tag, propose next if upstream tag changed
+          PINNED="${{ steps.pin.outputs.pinned }}"
+          # find highest existing vN tag
           EXISTS=$(curl -s "https://ghcr.io/token?scope=repository:${GITHUB_REPOSITORY_OWNER,,}/hermes-agentbox:pull" \
             | sed -n 's/.*"token":"\([^"]*\)".*/\1/p' \
             | xargs -I{} curl -s -H "Authorization: Bearer {}" "https://ghcr.io/v2/${GITHUB_REPOSITORY_OWNER,,}/hermes-agentbox/tags/list" \
             | python3 -c "import sys,json; tags=json.load(sys.stdin)['tags']; vs=[int(t[1:]) for t in tags if t.startswith('v') and t[1:].isdigit()]; print(max(vs) if vs else 0)")
           echo "existing vN: $EXISTS"
-          # last upstream tag recorded in the repo variable (default 0 on first run)
+          # last upstream tag recorded in the repo variable
           LAST=$(gh api repos/${GITHUB_REPOSITORY}/actions/variables/HERMES_LAST_TAG --jq '.value' 2>/dev/null || echo "")
-          if [ "$LAST" != "$HERMES_TAG" ]; then
+          if [ "$LAST" != "$PINNED" ]; then
             NEW=$((EXISTS + 1))
-            echo "upstream changed ($LAST -> $HERMES_TAG): bumping to v$NEW"
+            echo "upstream changed ($LAST -> $PINNED): bumping to v$NEW"
             echo "version=v$NEW" >> "$GITHUB_OUTPUT"
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
@@ -68,8 +78,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Record upstream tag (for change detection)
-        if: needs.resolve.outputs.changed == 'true'
-        run: echo "HERMES_LAST_TAG recorded as ${{ env.HERMES_TAG }} (managed by local CLI)"
+        run: |
+          gh api -X POST repos/${GITHUB_REPOSITORY}/actions/variables \
+            -f name=HERMES_LAST_TAG -f value="${{ needs.resolve.outputs.pinned }}" 2>/dev/null \
+            || gh api -X PATCH repos/${GITHUB_REPOSITORY}/actions/variables/HERMES_LAST_TAG \
+            -f value="${{ needs.resolve.outputs.pinned }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Compute lowercase image name
         id: img
@@ -93,7 +108,7 @@ jobs:
           platforms: linux/amd64
           push: true
           build-args: |
-            BASE_IMAGE=docker.io/nousresearch/hermes-agent:${{ env.HERMES_TAG }}
+            BASE_IMAGE=docker.io/nousresearch/hermes-agent:${{ needs.resolve.outputs.pinned }}
           tags: |
             ${{ steps.img.outputs.ref }}:${{ needs.resolve.outputs.version }}
             ${{ steps.img.outputs.ref }}:latest
