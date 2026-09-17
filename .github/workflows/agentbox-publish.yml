@@ -1,0 +1,64 @@
+name: Publish Agentbox image
+
+# Builds the Agentbox layer over the pinned official Hermes image and
+# publishes to this repo's GitHub Container Registry.
+#
+# One-time after first green run: make the package public
+# GitHub -> your profile -> Packages -> hermes-agentbox -> Package settings
+#   -> Change visibility -> Public
+# Then register on GMI Agentbox with Enable Credentials: OFF.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1" # weekly Monday 06:00 UTC — picks up new upstream tags
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  HERMES_TAG: v2026.9.14 # bump this one line to upgrade
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute lowercase image name
+        id: img
+        run: echo "ref=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/hermes-agentbox" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.agentbox
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            BASE_IMAGE=docker.io/nousresearch/hermes-agent:${{ env.HERMES_TAG }}
+          tags: |
+            ${{ steps.img.outputs.ref }}:latest
+            ${{ steps.img.outputs.ref }}:${{ env.HERMES_TAG }}
+
+      - name: Register URL
+        run: |
+          echo "### Register this on GMI Agentbox" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.img.outputs.ref }}:${{ env.HERMES_TAG }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Then make the package public (see workflow header)." >> "$GITHUB_STEP_SUMMARY"

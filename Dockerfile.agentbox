@@ -1,0 +1,20 @@
+# Thin AgentBox layer over the official Hermes image.
+# Build (AgentBox compute is x86_64):
+#   docker buildx build --platform linux/amd64 \
+#     --build-arg BASE_IMAGE=docker.io/nousresearch/hermes-agent:v2026.9.14 \
+#     -t hermes-agentbox:latest -f Dockerfile.agentbox .
+ARG BASE_IMAGE=docker.io/nousresearch/hermes-agent:v2026.9.14
+FROM ${BASE_IMAGE}
+
+# AgentBox health-checks and routes on the container's public port (default 8080).
+# The gateway's OpenAI-compatible API server + /health endpoint listen here.
+ENV API_SERVER_ENABLED=true \
+    API_SERVER_HOST=0.0.0.0 \
+    API_SERVER_PORT=8080
+
+# Map GMI MaaS injection -> Hermes GMI provider, before the main service boots.
+COPY --chmod=0755 gmi-maas-init /etc/cont-init.d/00-gmi-maas
+
+EXPOSE 8080
+# main-wrapper.sh routes "gateway run" -> `hermes gateway run`
+CMD ["gateway", "run"]

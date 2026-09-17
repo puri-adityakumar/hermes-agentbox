@@ -1,0 +1,38 @@
+#!/command/with-contenv sh
+# Runs inside the upstream Hermes s6 image BEFORE the main service starts.
+# Maps AgentBox-injected GMI MaaS vars -> Hermes' GMI provider, without
+# baking any secrets into the image.
+#
+# AgentBox injects (locked): GMI_MAAS_API_KEY, GMI_MAAS_BASE_URL, GMI_MODELS
+# Hermes GMI provider reads: GMI_API_KEY, GMI_BASE_URL (defaults api.gmi-serving.com/v1)
+set -e
+
+: "${GMI_MAAS_API_KEY:=${GMI_API_KEY:-}}"
+: "${GMI_MAAS_BASE_URL:=https://api.gmi-serving.com}"
+: "${GMI_MODELS:=deepseek-ai/DeepSeek-V4-Pro}"
+
+if [ -z "${GMI_MAAS_API_KEY}" ]; then
+    echo "[gmi-maas] WARN: no GMI_MAAS_API_KEY injected; inference will 401 until set" >&2
+fi
+
+# Hermes provider env vars (win at runtime; .env does not exist yet on first boot)
+printf '%s\n' \
+    "GMI_API_KEY=${GMI_MAAS_API_KEY}" \
+    "GMI_BASE_URL=${GMI_MAAS_BASE_URL%/}/v1" \
+    > /run/s6/container_environment/GMI_API_KEY
+printf '%s\n' "${GMI_MAAS_BASE_URL%/}/v1" > /run/s6/container_environment/GMI_BASE_URL
+
+# Model selection: HERMES_MODEL only feeds cron; the runtime reads model.default.
+# Render a minimal config.yaml on first boot only (user edits survive afterwards).
+if [ ! -f /opt/data/config.yaml ]; then
+    mkdir -p /opt/data
+    cat > /opt/data/config.yaml <<EOF
+model:
+  provider: "gmi"
+  default: "${GMI_MODELS}"
+EOF
+    chmod 0644 /opt/data/config.yaml
+    echo "[gmi-maas] config.yaml seeded (provider=gmi, model=${GMI_MODELS})" >&2
+fi
+
+echo "[gmi-maas] provider mapped: base=${GMI_MAAS_BASE_URL%/}/v1 model=${GMI_MODELS}" >&2
