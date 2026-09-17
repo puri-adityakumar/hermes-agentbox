@@ -69,13 +69,7 @@ jobs:
 
       - name: Record upstream tag (for change detection)
         if: needs.resolve.outputs.changed == 'true'
-        run: |
-          gh api -X POST repos/${GITHUB_REPOSITORY}/actions/variables \
-            -f name=HERMES_LAST_TAG -f value="${{ env.HERMES_TAG }}" 2>/dev/null \
-            || gh api -X PATCH repos/${GITHUB_REPOSITORY}/actions/variables/HERMES_LAST_TAG \
-            -f value="${{ env.HERMES_TAG }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "HERMES_LAST_TAG recorded as ${{ env.HERMES_TAG }} (managed by local CLI)"
 
       - name: Compute lowercase image name
         id: img
