@@ -20,13 +20,16 @@ ENV API_SERVER_ENABLED=true \
 COPY --chmod=0755 gmi-maas-init /etc/cont-init.d/00-gmi-maas
 
 # Single-port front + messaging/Tailscale tooling.
-# Installed: caddy (front proxy), tailscale (private dashboard access),
-# jq (authkey processing). Messaging clients ship in the base image; the
-# gateway enables Telegram/Discord automatically when their token env vars
-# are present — no extra packages needed.
+# Installed: caddy (front proxy), tailscale (private dashboard access via
+# official install script — Debian has no tailscale package). jq dropped
+# (not needed). Messaging clients ship in the base image; the gateway
+# enables Telegram/Discord automatically when their token env vars are
+# present — no extra packages needed.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends caddy tailscale jq \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends caddy curl gnupg \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL https://tailscale.com/install.sh | sh 2>/dev/null \
+    && tailscale version
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY --chmod=0755 caddy-start /etc/cont-init.d/01-caddy-start
 COPY --chmod=0755 tailscale-start /etc/cont-init.d/02-tailscale-start
