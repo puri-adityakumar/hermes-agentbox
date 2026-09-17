@@ -23,6 +23,7 @@ on:
 permissions:
   contents: read
   packages: write
+  actions: write # record HERMES_LAST_TAG repo variable for change detection
 
 env:
   HERMES_TAG: v2026.9.14 # bump this one line to upgrade Hermes
