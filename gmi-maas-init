@@ -9,7 +9,7 @@ set -e
 
 : "${GMI_MAAS_API_KEY:=${GMI_API_KEY:-}}"
 : "${GMI_MAAS_BASE_URL:=https://api.gmi-serving.com}"
-: "${GMI_MODELS:=deepseek-ai/DeepSeek-V4-Pro}"
+: "${GMI_MODELS:=deepseek-ai/DeepSeek-V4.1-Flash}"
 
 if [ -z "${GMI_MAAS_API_KEY}" ]; then
     echo "[gmi-maas] WARN: no GMI_MAAS_API_KEY injected; inference will 401 until set" >&2
