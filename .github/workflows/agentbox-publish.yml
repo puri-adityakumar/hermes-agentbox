@@ -53,6 +53,7 @@ jobs:
             BASE_IMAGE=docker.io/nousresearch/hermes-agent:${{ env.HERMES_TAG }}
           tags: |
             ${{ steps.img.outputs.ref }}:latest
+            ${{ steps.img.outputs.ref }}:v2
             ${{ steps.img.outputs.ref }}:${{ env.HERMES_TAG }}
 
       - name: Register URL
