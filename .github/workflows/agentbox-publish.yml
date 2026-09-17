@@ -34,7 +34,7 @@ jobs:
     outputs:
       version: ${{ steps.ver.outputs.version }}
       changed: ${{ steps.ver.outputs.changed }}
-      pinned: ${{ steps.ver.outputs.pinned }}
+      pinned: ${{ steps.pin.outputs.pinned }}
     steps:
       - name: Resolve latest upstream tag
         id: pin
